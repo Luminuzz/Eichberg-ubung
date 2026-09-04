@@ -250,6 +250,52 @@ princeprocessor --pw-min=6 --pw-max=16 base.txt \
 
 ---
 
+## 7b. Kandidatenlisten-Kochbuch (gezielte Listen)
+
+> Die wichtigste Fähigkeit: Suchraum durch **Wissen über die Zielperson** klein machen.
+> Ablauf immer: **Fakten sammeln → Muster erkennen → Kandidaten erzeugen → angreifen.**
+
+**Fakten-Quellen:** Profil (`.md`), geleakte `Passworte.txt`, Hinweise im Aufgabentext.
+Achte auf: Namen (Person, Partner, Kinder, Haustiere), Jahreszahlen, Orte, Interessen, bevorzugte Sonderzeichen.
+
+### Rezept 1 — Winzige Liste (Handvoll) → direkt tippen
+```bash
+printf 'DerSprung\nDerGang\nDerRuf\n' > candidates.txt
+john --wordlist=candidates.txt hash.txt
+```
+
+### Rezept 2 — Doppelwörter (`HausMaus`, `TestTest`) → Liste mit sich selbst kreuzen
+```bash
+hashcat --stdout -a 1 words.txt words.txt > doubled.txt
+# oder ganz ohne Zwischendatei direkt angreifen:
+hashcat -m <mode> hash.txt -a 1 words.txt words.txt
+```
+
+### Rezept 3 — Mehrteiliges Schema (`<Jahr><Stadt><Stadt><Sonderz.>`) → Kern kombinieren, Deko per Hybrid
+```bash
+printf 'Berlin\nHamburg\nMuenchen\nKoeln\n' > cities.txt
+hashcat --stdout -a 1 cities.txt cities.txt > pairs.txt      # BerlinHamburg, ...
+awk '{print "2025"$0}' pairs.txt > y_pairs.txt               # 2025BerlinHamburg, ...
+# vier Sonderzeichen aus kleinem Satz als Maske hinten (Hybrid -a 6):
+hashcat -m 10500 star.hashcat -a 6 y_pairs.txt -1 '$€!' '?1?1?1?1'
+```
+
+### Rezept 4 — Namen aus Profil (`#janejudy1`) → Namen kreuzen, dann dekorieren
+```bash
+printf 'jane\njudy\nemma\n' > names.txt
+hashcat --stdout -a 1 names.txt names.txt > namepairs.txt    # janejudy, ...
+printf '^#$1\n' > deco.rule                                  # '#' davor, '1' dahinter
+hashcat -m <mode> hash.txt namepairs.txt -r deco.rule        # #janejudy1
+```
+
+**Groß-/Kleinschreibung nie von Hand** — Regeln erledigen das: `c` (Capitalize), `d` (doppeln), `$1` (Ziffer dran), `t` (Toggle). Basisliste klein halten, Regeln decken die Varianten ab.
+
+**Zwei Punktebringer (auch mündlich):**
+- **Reihenfolge lassen** bei nach Häufigkeit sortierten Leaks → **kein** `sort -u` (sonst „wahrscheinlichstes zuerst" kaputt).
+- **Klein halten:** bei langsamen Hashes (7z, KeePass, PDF) zählt jeder Versuch — Kandidatenraum *verkleinern*, nicht aufblähen.
+
+---
+
 ## 8. Sonderfälle (die typischen Stolperer)
 
 ### KeePass KDBX4 / Argon2 → pykeepass statt keepass2john
