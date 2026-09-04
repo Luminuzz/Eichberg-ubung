@@ -32,7 +32,37 @@
 
 ---
 
-## 1. Dateityp identifizieren
+## 1. Syntax-Grundlagen: John ↔ Hashcat
+
+Der Denkunterschied in einem Satz:
+**Hashcat musst du sagen *was* (`-m`) und *wie* (`-a`); John rät das Format selbst und wählt den Modus über benannte Flags.**
+
+### Hashcat — Grammatik
+```
+hashcat -m <modus> -a <angriff> [optionen] <hashdatei> <angriffs-argumente>
+```
+- `-m` = Hash-Typ als **Nummer** (0=MD5, 100=SHA1, 1400=SHA256, 1700=SHA512, 1800=sha512crypt, 11600=7z, 13400=KeePass, 18400=ODF)
+- `-a` = Angriffsmodus: **0**=Wörterbuch · **1**=Kombinator · **3**=Maske/Brute · **6**=Hybrid Wort+Maske · **7**=Maske+Wort
+- danach die Hashdatei, dann je nach `-a`: Wörterbuch (`-r rules`), Maske, oder zwei Wörterbücher
+- oft nützlich: `-1 '$!.'` eigener Zeichensatz · `--show` · `-o treffer.txt` · `--stdout` (nur Kandidaten ausgeben, nicht angreifen)
+
+### John — Grammatik
+```
+john [--format=NAME] <modus-flag> <hashdatei>
+```
+- Format wird **auto-erkannt**; nur bei Bedarf `--format=` erzwingen
+- Modus = **Flag**, keine Nummer: `--wordlist=FILE` (+ `--rules=Jumbo`) · `--mask='?d?d?d?d'` · `--incremental` · `--single`
+- Ergebnis/Verwaltung: `--show` · Pot-Datei `~/.john/john.pot` · `--session=name` · `--restore=name` · `--fork=4`
+
+### Dasselbe Ziel, zwei Schreibweisen (SHA256 + rockyou + Regeln)
+```bash
+john    --wordlist=rockyou.txt --rules=Jumbo hash.txt
+hashcat -m 1400 hash.txt -a 0 rockyou.txt -r /usr/share/hashcat/rules/best64.rule
+```
+
+---
+
+## 2. Dateityp identifizieren
 
 ```bash
 file verdaechtig.datei          # Typ raten (Magic Bytes)
@@ -46,7 +76,7 @@ Magic `00 05 16 07`) — kein echtes Archiv! Immer `file` + Größe prüfen, bev
 
 ---
 
-## 2. Hash extrahieren — Tool je Dateityp
+## 3. Hash extrahieren — Tool je Dateityp
 
 | Dateityp | Extraktionstool | Cracker | Hashcat-Modus* |
 |----------|-----------------|---------|----------------|
@@ -54,13 +84,13 @@ Magic `00 05 16 07`) — kein echtes Archiv! Immer `file` + Größe prüfen, bev
 | `.pdf` | `pdf2john <f>` | John | 10500 (v1.4–1.6) |
 | `.odt/.ods` (LibreOffice/ODF) | **`libreoffice2john.py`** (NICHT `odf2john`) | John | 18400 |
 | `.kdbx` (KeePass, KDBX3) | `keepass2john <f>` | John | 13400 |
-| `.kdbx` (KeePass, **KDBX4/Argon2**) | ⚠ `keepass2john` scheitert → **pykeepass** (siehe §7) | Python | — |
+| `.kdbx` (KeePass, **KDBX4/Argon2**) | ⚠ `keepass2john` scheitert → **pykeepass** (siehe §8) | Python | — |
 | `.numbers/.pages/.key` (iWork) | `iwork2john <f>` | John | (kein GPU-Modus → John) |
 | `.dmg` (Mac Disk Image) | `dmg2john <f>` | John | — (nur John) |
 | APFS-Volume | `apfs2hashcat` (kompilieren) | Hashcat | 18300 |
 | Linux-Login | aus `/etc/shadow` kopieren | beide | 1800 ($6$) / 3200 ($2y$) |
-| OpenSSL `enc` (`.aes256cbc_*`) | **kein Hash!** → Entschlüsselungs-Schleife (§7) | openssl | — |
-| Java `hashCode()` | **kein Standard-Hash** → eigenes Python (§7) | Python | — |
+| OpenSSL `enc` (`.aes256cbc_*`) | **kein Hash!** → Entschlüsselungs-Schleife (§8) | openssl | — |
+| Java `hashCode()` | **kein Standard-Hash** → eigenes Python (§8) | Python | — |
 
 \* Hashcat-Modi immer gegenprüfen: `hashcat --example-hashes | less` oder Hashcat-Wiki „Example Hashes".
 John erkennt das Format meist automatisch — im Zweifel `--format=` explizit setzen.
@@ -79,7 +109,7 @@ cat hurdle.hash                        # NIE leer! leer = Extraktion fehlgeschla
 
 ---
 
-## 3. Hash aufbereiten (nur nötig, wenn Hashcat statt John)
+## 4. Hash aufbereiten (nur nötig, wenn Hashcat statt John)
 
 John frisst die `*2john`-Ausgabe meist direkt. Für **Hashcat** muss man den `Dateiname:`-Präfix
 (und bei ODF den Suffix) abschneiden:
@@ -94,7 +124,7 @@ libreoffice2john.py Numbers1.odt | sed -E -e 's/^[^:]+://' -e 's/:::::[^:]+$//' 
 
 ---
 
-## 4. Angriff — John ↔ Hashcat nebeneinander
+## 5. Angriff — John ↔ Hashcat nebeneinander
 
 Rockyou-Pfad in Kali: `/usr/share/wordlists/rockyou.txt`
 (falls `.gz`: `sudo gunzip /usr/share/wordlists/rockyou.txt.gz`)
@@ -102,57 +132,66 @@ Weitere: `/usr/share/dict/cracklib-small`, `/usr/share/wordlists/metasploit/*.tx
 
 ### a) Reines Wörterbuch
 ```bash
-# John
-john --wordlist=/usr/share/wordlists/rockyou.txt hash.txt
-# Hashcat  (-a 0 = Wörterbuch)
-hashcat -m 0 hash.txt -a 0 /usr/share/wordlists/rockyou.txt
+john    --wordlist=/usr/share/wordlists/rockyou.txt hash.txt
+hashcat -m 0 hash.txt -a 0 /usr/share/wordlists/rockyou.txt      # -a 0 = Wörterbuch
 ```
 
 ### b) Wörterbuch + Regeln (wenn rohes Rockyou scheitert)
 ```bash
-# John (eingebaute Regelsätze)
-john --wordlist=rockyou.txt --rules=Jumbo hash.txt
-# Hashcat (best64 = Wettbewerbssieger-Regelsatz)
+john    --wordlist=rockyou.txt --rules=Jumbo hash.txt
 hashcat -m 0 hash.txt -a 0 rockyou.txt -r /usr/share/hashcat/rules/best64.rule
 ```
 
 ### c) Maske / Brute-force (bekanntes Muster)
 ```bash
 # Beispiel: 5-stellige PIN
-# John
-john --mask='?d?d?d?d?d' hash.txt
-# Hashcat  (-a 3 = Maske/Brute-force)
-hashcat -m 1400 hash.txt -a 3 '?d?d?d?d?d'
+john    --mask='?d?d?d?d?d' hash.txt
+hashcat -m 1400 hash.txt -a 3 '?d?d?d?d?d'                        # -a 3 = Maske
 ```
 
-### d) Kombinator = Kreuzprodukt zweier Wörterbücher (z. B. `BerlinHamburg`)
+### d) Kombinator = zwei Wörterlisten kreuzen  ⭐ (schnell, KEINE Zwischendatei nötig)
+`-a 1` hängt **jedes** Wort aus Liste 1 an **jedes** aus Liste 2 — direkt, ohne vorher eine
+Datei zu erzeugen. Unter Zeitdruck fast immer besser als „erst per Skript eine Liste bauen".
 ```bash
-# Hashcat  (-a 1)  — self-combine erlaubt (Liste mit sich selbst)
+# Grundform: links.txt × rechts.txt  (z.B. BerlinHamburg)
+hashcat -m 1400 hash.txt -a 1 links.txt rechts.txt
+
+# gleiche Liste mit sich selbst (StadtStadt, HausHaus, ...)
 hashcat -m 1400 hash.txt -a 1 cities.txt cities.txt
-# John: keinen nativen -a1-Modus -> Liste vorher erzeugen und mit --wordlist fahren:
-hashcat --stdout -a 1 cities.txt cities.txt > combined.txt
-john --wordlist=combined.txt hash.txt
+
+# Regel je Seite:  -j = linkes/erstes Wort,  -k = rechtes/zweites Wort
+hashcat -m 1400 hash.txt -a 1 a.txt b.txt -j '$-'    # "-" hinter das linke Wort  -> Kuh-Haus
 ```
+**Grenzen:** `-a 1` kreuzt **genau zwei** Listen und braucht Hashcat (GPU-Vorteil).
+- **Drei+ Listen:** verketten über `--stdout`, dann als Wörterbuch nutzen
+  ```bash
+  hashcat --stdout -a 1 base1.txt base2.txt > b12.txt
+  hashcat --stdout -a 1 b12.txt  base3.txt > final.txt   # oder direkt angreifen
+  ```
+  (oder `combinator` / `combinator3` aus **hashcat-utils**)
+- **Nur John in der VM (kein GPU):** John hat keinen nativen Kombinator → Liste einmal vorab
+  erzeugen und mit `--wordlist` fahren:
+  ```bash
+  hashcat --stdout -a 1 cities.txt cities.txt > combined.txt
+  john --wordlist=combined.txt hash.txt
+  ```
 
 ### e) Hybrid = Wörterbuch + Maske (z. B. `ILuvU2023!!`)
 ```bash
 # Eigener Zeichensatz -1='$.!', dann in Maske als ?1 referenzieren
-# Hashcat  (-a 6 = Wort + Maske hinten)
-hashcat -m 1400 hash.txt -a 6 candidates.txt -1 '$.!' '?d?d?d?d?1?1'
-# (-a 7 = Maske + Wort vorne)
+hashcat -m 1400 hash.txt -a 6 candidates.txt -1 '$.!' '?d?d?d?d?1?1'   # -a 6 = Wort + Maske hinten
+# -a 7 = Maske + Wort vorne
 ```
 
 ### f) Kandidaten aus stdin / eigener Liste
 ```bash
-# John
-john --stdin hash.txt < candidates.txt
-# Hashcat
+john    --stdin hash.txt < candidates.txt
 cat candidates.txt | hashcat -m 0 hash.txt
 ```
 
 ---
 
-## 5. Zeichensätze & Regeln (Kurzreferenz)
+## 6. Zeichensätze & Regeln (Kurzreferenz)
 
 **Hashcat-Zeichensätze:**
 ```
@@ -183,7 +222,7 @@ hashcat -m 1700 hash.txt candidates.txt -r case.rule
 
 ---
 
-## 6. Wörterbücher bauen mit Shell (grep/tr/sed/sort/awk)
+## 7. Wörterbücher bauen mit Shell (grep/tr/sed/sort/awk)
 
 ```bash
 # Alle 3-4-buchstabigen Wörter aus Rockyou (Lookahead filtert längere)
@@ -211,7 +250,7 @@ princeprocessor --pw-min=6 --pw-max=16 base.txt \
 
 ---
 
-## 7. Sonderfälle (die typischen Stolperer)
+## 8. Sonderfälle (die typischen Stolperer)
 
 ### KeePass KDBX4 / Argon2 → pykeepass statt keepass2john
 `keepass2john` kann nur KDBX3. Bei KDBX4 (Argon2) direkter Brute-Force in Python:
@@ -259,7 +298,7 @@ for n in range(1, 6):
 
 ---
 
-## 8. John Housekeeping (nützlich in der Prüfung)
+## 9. John Housekeeping (nützlich in der Prüfung)
 
 ```bash
 john --show hash.txt              # bereits geknackte Passwörter anzeigen
@@ -269,12 +308,66 @@ john --session=meinjob --wordlist=rockyou.txt hash.txt   # benannte Session
 john --fork=4 --wordlist=... hash.txt   # 4 CPU-Kerne nutzen
 john --list=formats | tr ',' '\n' | grep -i keepass      # Format finden
 ```
-> Läuft ein Angriff „leer" durch, ist oft die **Hash-Datei leer** (Extraktion in Schritt 2 gescheitert).
+> Läuft ein Angriff „leer" durch, ist oft die **Hash-Datei leer** (Extraktion in Schritt 3 gescheitert).
 > Und: Shell-Hygiene — `VAR=wert` **ohne Leerzeichen** ums `=`, sonst stiller Fehler.
 
 ---
 
-## 9. Muster aus den Übungsaufgaben (Strategie-Spickzettel)
+## 10. Plattform: VM, macOS & GPU
+
+### Erst prüfen, was da ist (schlägt jede Vermutung)
+```bash
+hashcat -I     # listet Backends/Geräte — steht da eine GPU (Metal/CUDA/OpenCL)? sonst CPU/John
+hashcat -b     # Benchmark: wie schnell ist die Maschine wirklich?
+```
+
+### Kali-VM (auch auf dem Mac: UTM/VirtualBox/Parallels)
+- GPU-Durchreichung geht praktisch **nicht** → Hashcat bleibt CPU-only oder unbrauchbar.
+- ⇒ **John (CPU) ist der Default.** Genau wie im Labor.
+
+### Nativ auf macOS (Apple Silicon M1–M4)
+- Hashcat nutzt das **Metal-Backend** → echte GPU-Beschleunigung (nur bei *schnellen* Hashes sinnvoll).
+- Install über Homebrew:
+  ```bash
+  brew install hashcat john-jumbo
+  ```
+- `*2john`-Skripte finden (Pfad variiert je nach brew-Version):
+  ```bash
+  ls "$(brew --prefix)/share/john/"*2john*      # z.B. 7z2john.pl, pdf2john.pl, keepass2john
+  ```
+- rockyou ist auf macOS **nicht** vorinstalliert → aus SecLists/GitHub laden, Pfad selbst setzen.
+- Metal hat gelegentlich Lücken bei exotischen Modi → John bleibt der sichere Fallback.
+
+### Der entscheidende Punkt (fürs Mündliche!)
+Bei **Container-Formaten** (7z, PDF, KeePass, iWork, ODF) hilft die GPU oft **kaum**: sie nutzen
+absichtlich **langsame KDFs** (jeder Rateversuch ist teuer). Brute-Force ist da chancenlos — egal
+wie schnell die Karte. ⇒ Gewinn kommt aus einer **kleinen, klugen Kandidatenliste**, nicht aus Hardware.
+GPU lohnt nur bei *schnellen* Hashes (MD5/SHA + rockyou + Regeln).
+
+---
+
+## 11. Alternative Wege & „war das schlau?" (Labor-Rückblick)
+
+> Kernaussage: Der Engpass war fast nie Rechenleistung, sondern die **Qualität der Kandidatenliste**.
+> Genau das wurde optimiert → guter Weg. Alternativen zeigen, dass man das Werkzeug versteht.
+
+| Aufgabe | Gewählter Weg | Alternative(n) | Warum schlau |
+|---------|---------------|----------------|--------------|
+| Hurdle.7z | Muster `Der <Nomen>` → Mini-Liste → `7z2john` + John | dieselbe Liste mit `hashcat -m 11600` | Muster erkannt statt brute |
+| Star.pdf | Schema-Liste `<Jahr><Stadt><Stadt><Sz>` bauen | Kombinator `-a 1` (Städte×Städte) + Hybrid `-a 6` fürs Jahr/Sonderz. | Kandidatenraum gezielt klein |
+| MySheet.numbers | `iwork2john` + Doppelwort-Liste | `-a 0` mit Regel `d` (→ `TestTest`) oder Kombinator + `c` | passende Regel statt Handarbeit |
+| Java Hashcodes | eigenes Python + Meet-in-the-Middle | praktisch keine (kein Tool kann Java `hashCode()`) | Highlight — eigenes Werkzeug gebaut |
+| Max Müller.kdbx | `keepass2john` scheitert → **pykeepass** + Profil-Kandidaten | neueres john-jumbo / `hashcat -m 13400` (KDBX4-Support **versionsabhängig**); `keepass4brute` | dokumentierter Pivot = genau das, was zählt |
+| Passwords.pages | Muster `#name1` → Liste | Hybrid: Namen-Kombinator + `^#` + `$?d` | Muster direkt umgesetzt |
+| OpenSSL-Datei | `enc -d`-Schleife + Printable-Check | `bruteforce-salted-openssl` | Printable-Check ist der Kniff |
+| Numbers1.odt | **libreoffice2john** + rockyou | `hashcat -m 18400` | richtiger Extraktor (nicht `odf2john`) |
+
+**Satz fürs Mündliche:** „Wir haben den *Kandidatenraum* durch Wissen über die Zielperson klein gemacht,
+statt blind zu brute-forcen — deshalb reichten CPU/John, obwohl es langsame Hashes waren."
+
+---
+
+## 12. Muster aus den Übungsaufgaben (Strategie-Spickzettel)
 
 > Die Prüfung ist „strukturell sehr vergleichbar". Hier das *Denkmuster* je Aufgabentyp — nicht die Lösungen.
 
@@ -283,15 +376,8 @@ john --list=formats | tr ',' '\n' | grep -i keepass      # Format finden
 | Archiv + geleakte Wortliste | Muster im Leak erkennen (z. B. `Der <Substantiv>`) → gezielte Kandidatenliste |
 | PDF, Schema bekannt | Policy + Aufbau `<Jahr><Stadt1><Stadt2><Sonderz.>` → Kandidatenliste generieren |
 | iWork, „zusammengezogene Wörter, ≥8 Buchstaben, korrekte Groß-/Kleinschr." | Wortpaare + Capitalize-Regel |
-| Java Hashcodes | eigenes Python (§7) |
-| KeePass + Profil-`.md` | Fakten aus Profil → Kandidaten; KDBX4 → pykeepass (§7) |
+| Java Hashcodes | eigenes Python (§8) |
+| KeePass + Profil-`.md` | Fakten aus Profil → Kandidaten; KDBX4 → pykeepass (§8) |
 | `.pages`, Muster wie `#name1` | gezielte Kandidaten nach erkanntem Muster |
-| OpenSSL-verschlüsselt + Kandidatenliste | Software bestimmen → Entschlüsselungs-Schleife (§7) |
+| OpenSSL-verschlüsselt + Kandidatenliste | Software bestimmen → Entschlüsselungs-Schleife (§8) |
 | ODF/Numbers, keine Infos | Best Practice: `libreoffice2john.py` + rockyou (+ Regeln) |
-
----
-
-## 10. VM-Realität
-- **Kein GPU/OpenCL in VirtualBox** → Hashcat läuft nicht (gut) → **John (CPU)** ist der Default.
-- Hashcat trotzdem kennen: für die mündliche Prüfung und weil manche Extraktion Hashcat-Format braucht.
-- Es kann sein, dass weder John noch Hashcat *direkt* geht → dann Vorverarbeitung (§2/§3) oder eigenes Skript.
