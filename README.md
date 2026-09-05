@@ -427,3 +427,52 @@ statt blind zu brute-forcen — deshalb reichten CPU/John, obwohl es langsame Ha
 | `.pages`, Muster wie `#name1` | gezielte Kandidaten nach erkanntem Muster |
 | OpenSSL-verschlüsselt + Kandidatenliste | Software bestimmen → Entschlüsselungs-Schleife (§8) |
 | ODF/Numbers, keine Infos | Best Practice: `libreoffice2john.py` + rockyou (+ Regeln) |
+
+---
+
+## 13. Last-Minute-Karten (die 8, die sitzen müssen)
+
+| Situation | Antwort |
+|-----------|---------|
+| Hash aus `.pdf` ziehen | `pdf2john` |
+| Hash aus `.numbers/.pages` (iWork) ziehen | `iwork2john` |
+| KeePass KDBX4 / Argon2 (keepass2john versagt) | `pykeepass` (Python) |
+| Aus **einem Wort** Varianten: groß, Ziffer dran, doppeln | **Regeln (rules)** — `c` `$1` `d` |
+| Zeichen nach Bauplan (z. B. 5-stellige PIN) | **Maske** — `-a 3`, z. B. `?d?d?d?d?d` |
+| Zwei Listen kreuzen (`Stadt`+`Jahr`) | **Kombinator** — `-a 1` |
+| `.aes256cbc.encrypted` | **Verschlüsselung** (kein Hash!) → Erfolg = **lesbarer Klartext** (Printable-Check) |
+| Wozu Salt? | macht Hash **einzigartig** (gegen Rainbow Tables), **nicht geheim** |
+
+**Regeln vs. Maske (nie verwechseln):** Regeln *wandeln Wörter ab*. Maske *erfindet Zeichenkombinationen*.
+**Verschlüsselung vs. Hash:** Hash = Einwegvergleich, Erfolg eindeutig. Verschlüsselung (OpenSSL) = kein Hash, Erfolg = Klartext.
+**MD5 vs. SHA-256:** fürs Knacken **egal** — beide schnell & ungeeignet. Relevant nur **schnell vs. langsam (KDF)**.
+
+---
+
+## 14. Datenträger & Linux-Logins (Datei-Szenarien)
+
+### Mac Disk Image (.dmg) — nur John
+```bash
+dmg2john Container.dmg > Container.dmg.john                 # Extraktion
+john Container.dmg.john --wordlist=/usr/share/wordlists/rockyou.txt
+```
+
+### Verschlüsselter USB / APFS-Volume — hier Hashcat (Modus 18300)
+```bash
+sudo fdisk -l                                              # Zielpartition finden: /dev/sda2 = Apple APFS
+# apfs2hashcat installieren (Sourcen kompilieren) = Doku-Punkt 05
+sudo ./apfs-dump-quick /dev/sda2 /tmp/log.txt             # Hash steht danach im Log → in fv2.hashcat kopieren
+hashcat -m 18300 fv2.hashcat /usr/share/wordlists/rockyou.txt
+```
+> Erst Partition identifizieren, dann extrahieren. Extraktion über `apfs2hashcat` (kein `*2john`).
+
+### Linux-User-Passwort aus /etc/shadow
+```bash
+sudo grep 'username' /etc/shadow | cut -d: -f2            # → $6$salt$hash  (ID+Salt+Hash)
+# klassische Alternative (Johns Helfer):
+sudo unshadow /etc/passwd /etc/shadow > hash.txt
+john hash.txt --wordlist=/usr/share/wordlists/rockyou.txt # John erkennt Format automatisch
+hashcat -m 1800 hash.txt -a 0 /usr/share/wordlists/rockyou.txt   # nur für $6$
+```
+**Algorithmus an der ID erkennen:** `$5$` sha256crypt (veraltet, hashcat -m 7400) · `$6$` sha512crypt (hashcat -m 1800) · `$y$`/`$7$` **yescrypt** (aktueller Standard).
+> ⚠ **yescrypt (`$y$`) unterstützt Hashcat NICHT** → hier ist **John** das Werkzeug (Grund: Format-Support, nicht GPU).
